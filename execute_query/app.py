@@ -39,11 +39,9 @@ def insert_query_id(id, task_token):
 
 
 def lambda_handler(event, context):
-    # print(event)
     task_token = event['MyTaskToken']
 
     # Database specified in Execution Context below.
-    # query = f"select h3_hires, count(*) from {DATABASE}.{TABLE} group by 1 order by 1"
     query = f"select h3, count(*) from {DATABASE}.{TABLE} group by 1 order by 1"
 
     # Execution
@@ -59,7 +57,6 @@ def lambda_handler(event, context):
 
     # get query execution id
     query_execution_id = response['QueryExecutionId']
-    # print(response)
     # query_status = athena.get_query_execution(QueryExecutionId=query_execution_id)
     # query_execution_status = query_status['QueryExecution']['Status']['State']
     insert_query_id(id=query_execution_id, task_token=task_token)

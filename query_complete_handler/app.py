@@ -1,12 +1,10 @@
 """
 second of a pair of functions demonstrating an approach to handling async Athena
 queries in a Step Function. This function listens for the EventBridge event 
-signaling completion of the query and then it calls the 
+signaling completion of the query, and then it calls the
 send_task_success/send_task_failure allowing the step function to continue
 """
 import json
-import random
-import time
 import boto3
 import logging
 import os
@@ -15,8 +13,6 @@ logger = logging.getLogger()
 logger.setLevel(os.environ.get("LOGLEVEL", "WARNING"))
 
 QUERIES_TABLE = os.getenv('QUERIES_TABLE', default='athena_queries')
-# OUTPUT_BUCKET = os.getenv('OUTPUT_BUCKET', default='csb-pilot-delivery')
-# QUERY_LABEL = os.getenv('QUERY_LABEL', default='DEMO_QUERY')
 
 athena = boto3.client('athena')
 dynamodb = boto3.resource('dynamodb')
@@ -46,7 +42,6 @@ def is_query_of_interest(query_id):
     response = ddb_table.get_item(
         Key={'QueryExecutionId': query_id}
     )
-    # return ('Item' in response)
     if 'Item' in response:
         return response
     else:
@@ -55,9 +50,8 @@ def is_query_of_interest(query_id):
 
 def lambda_handler(event, context):
     query_execution_id = event['detail']['queryExecutionId']
-    print(event)
 
-    # query DDB to see if this query is a h3 query
+    # query DDB to see if this query is associated with a TaskToken
     query_of_interest = is_query_of_interest(query_execution_id)
 
     if not query_of_interest:
@@ -65,7 +59,6 @@ def lambda_handler(event, context):
         return
 
     item = query_of_interest['Item']
-    print(item)
     task_token = item['TaskToken']
     query_id = item['QueryExecutionId']
     payload = {
