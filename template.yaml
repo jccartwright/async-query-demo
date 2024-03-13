@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Demonstrates a pattern using a Step Function to issue an asynchronous Athena query
+  and then waiting for a callback. An independent Lambda uses an EventBridge rule to 
+  listen for the query to complete and then notifies the Step Function to proceed. 
+  A DynamoDB table is used to associate the QueryExecutionId received in the 
+  EventBridge event with the TaskToken needed to notify the StepFunction to proceed.
+  Also demonstrates getting the query results one page at a time and processing each
+  row of the result set.
+  This is an alternative to having the Step Function poll the query for status (using Wait task)
+  or running the query synchronously (which is limited by size of result set).
+
+Globals:
+  Function:
+    Timeout: 3
+    MemorySize: 128
+    Handler: app.lambda_handler
+    Runtime: python3.9
+    Environment:
+      Variables:
+        LOGLEVEL: WARNING
+        QUERIES_TABLE: !Ref QueryTrackingTable
+
+
+Resources:
+  ExecuteQueryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: execute_query/
+      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Handler: app.lambda_handler
+      Runtime: python3.9
+      Architectures:
+        - x86_64
+
+  QueryCompleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: query_complete_handler/
+      Handler: app.lambda_handler
+      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      Runtime: python3.9
+      Architectures:
+        - x86_64
+      Events:
+        Trigger:
+          Type: CloudWatchEvent
+          Properties:
+            Pattern:
+              source:
+                - aws.athena
+              detail-type:
+                - 'Athena Query State Change'
+              detail:
+                currentState:
+                  - 'SUCCEEDED'
+                  - 'FAILED'
+
+  AsyncQueryDemoStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      DefinitionUri: statemachine/async_query_demo.asl.json
+      Role: arn:aws:iam::282856304593:role/csb-pilot-role
+      DefinitionSubstitutions:
+        StartQueryFunction: !GetAtt ExecuteQueryFunction.Arn
+
+  # associate the Athena QueryExecutionId with the StepFunction TaskToken
+  QueryTrackingTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-queries'
+      TimeToLiveSpecification:
+        AttributeName: TTL,
+        Enabled: true
+      Tags:
+        - Key: stack-name
+          Value: !Ref AWS::StackName
+
+      AttributeDefinitions:
+        - AttributeName: QueryExecutionId
+          AttributeType: S
+
+      KeySchema:
+        - AttributeName: QueryExecutionId
+          KeyType: HASH
+
+      BillingMode: PAY_PER_REQUEST
+
+Outputs:
+  QueryLookupTableName:
+    Value: !Ref QueryTrackingTable

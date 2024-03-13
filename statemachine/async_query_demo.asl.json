@@ -1,0 +1,121 @@
+{
+  "Comment": "A description of my state machine",
+  "StartAt": "Execute Query",
+  "States": {
+    "Execute Query": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {
+        "FunctionName": "${StartQueryFunction}",
+        "Payload": {
+          "MyTaskToken.$": "$$.Task.Token"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "Athena GetQueryExecution",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "Next": "Fail"
+        }
+      ],
+      "Comment": "Start Athena query and wait for callback"
+    },
+    "Athena GetQueryExecution": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::athena:getQueryExecution",
+      "Parameters": {
+        "QueryExecutionId.$": "$.QueryExecution.QueryExecutionId"
+      },
+      "Next": "Get First Page of Query Results"
+    },
+    "Get First Page of Query Results": {
+      "Type": "Task",
+      "ResultPath": "$.GetQueryResults",
+      "Resource": "arn:aws:states:::athena:getQueryResults",
+      "Parameters": {
+        "MaxResults": 25,
+        "QueryExecutionId.$": "$.QueryExecution.QueryExecutionId"
+      },
+      "Next": "Iterate over results",
+      "Comment": "Get the first page of results (without NextToken)"
+    },
+    "Iterate over results": {
+      "Type": "Map",
+      "ResultPath": null,
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "Process Row",
+        "States": {
+          "Process Row": {
+            "Type": "Pass",
+            "End": true,
+            "Parameters": {
+              "key.$": "$.Data[0].VarCharValue",
+              "value.$": "$.Data[1].VarCharValue"
+            }
+          }
+        }
+      },
+      "Next": "More Results?",
+      "MaxConcurrency": 1,
+      "InputPath": "$.GetQueryResults.ResultSet.Rows[1:]",
+      "Comment": "Iterate over each row in the page of results"
+    },
+    "More Results?": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.GetQueryResults.NextToken",
+          "IsPresent": true,
+          "Next": "Prepare Next Query Params"
+        }
+      ],
+      "Default": "Success",
+      "Comment": "Any more query results to retrieve?"
+    },
+    "Prepare Next Query Params": {
+      "Type": "Pass",
+      "ResultPath": "$.StartQueryParams",
+      "Parameters": {
+        "QueryExecutionId.$": "$.QueryExecution.QueryExecutionId",
+        "NextToken.$": "$.GetQueryResults.NextToken"
+      },
+      "Next": "Get Next Page of Results"
+    },
+    "Get Next Page of Results": {
+      "Type": "Task",
+      "ResultPath": "$.GetQueryResults",
+      "Resource": "arn:aws:states:::athena:getQueryResults",
+      "Parameters": {
+        "MaxResults": 25,
+        "NextToken.$": "$.StartQueryParams.NextToken",
+        "QueryExecutionId.$": "$.QueryExecution.QueryExecutionId"
+      },
+      "Next": "Iterate over results"
+    },
+    "Fail": {
+      "Type": "Fail"
+    },
+    "Success": {
+      "Type": "Succeed"
+    }
+  },
+  "TimeoutSeconds": 65
+}
