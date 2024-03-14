@@ -2,14 +2,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
   Demonstrates a pattern using a Step Function to issue an asynchronous Athena query
-  and then waiting for a callback. An independent Lambda uses an EventBridge rule to 
-  listen for the query to complete and then notifies the Step Function to proceed. 
-  A DynamoDB table is used to associate the QueryExecutionId received in the 
-  EventBridge event with the TaskToken needed to notify the StepFunction to proceed.
-  Also demonstrates getting the query results one page at a time and processing each
-  row of the result set.
-  This is an alternative to having the Step Function poll the query for status (using Wait task)
-  or running the query synchronously (which is limited by size of result set).
+  and then waiting for a callback. Also shows paging through Athena result set
 
 Globals:
   Function:
@@ -71,7 +64,7 @@ Resources:
     Properties:
       TableName: !Sub '${AWS::StackName}-queries'
       TimeToLiveSpecification:
-        AttributeName: TTL,
+        AttributeName: ttl,
         Enabled: true
       Tags:
         - Key: stack-name

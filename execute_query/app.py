@@ -28,7 +28,7 @@ def insert_query_id(id, task_token):
     attributes = {
         'QueryExecutionId': id,
         'TaskToken': task_token,
-        'TTL': ttl
+        'ttl': ttl
     }
     response = ddb_table.put_item(
         Item=attributes
